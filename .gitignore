@@ -1,0 +1,8 @@
+Pods
+.DS_Store
+*.bundle
+xcuserdata
+LYRCoreData.xcworkspace/xcuserdata/*.xcuserdatad/
+LYRCoreData.xcworkspace/xcshareddata/xcschemes/*.xcscheme
+LYRCoreData.xcworkspace/xcshareddata/LYRCoreData.xccheckout
+xcodebuild.log
