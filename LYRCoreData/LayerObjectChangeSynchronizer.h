@@ -26,7 +26,7 @@
  @param layerClient The Layer client to be observed for object model changes.
  @param managedObjectContext The managed object context in which to synchronize the object model changes. This context is assumed to have a entities named `Conversation` and `Message` with attributes matching the `LYRConversation` and `LYRMessage` counterparts.
  */
-- (id)initWithLayerClient:(LYRClient *)layerClient managedObjectContext:(NSManagedObjectContext *)managedObjectContext;
+- (id)initWithLayerClient:(LYRClient *)layerClient;
 
 ///-------------------------------------
 /// @name Customizing Messaging Entities

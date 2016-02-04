@@ -1,0 +1,21 @@
+//
+//  LYRCoreData.pch
+//  LYRCoreData
+//
+//  Created by Bogdan Geleta on 2/4/16.
+//  Copyright © 2016 Layer. All rights reserved.
+//
+
+#ifndef LYRCoreData_pch
+#define LYRCoreData_pch
+
+// Include any system framework and library headers here that should be included in all compilation units.
+// You will also need to set the Prefix Header build setting of one or more of your targets to reference this file.
+
+#endif /* LYRCoreData_pch */
+
+#ifdef true
+#define LYRLog(fmt, ...) NSLog((@"%s [Line %d] " fmt), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__);
+#else
+#define LYRLog(...)
+#endif

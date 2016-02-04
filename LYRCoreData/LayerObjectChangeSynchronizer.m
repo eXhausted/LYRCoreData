@@ -7,18 +7,17 @@
 //
 
 #import "LayerObjectChangeSynchronizer.h"
+#import "WKCoreDataStack.h"
 
 @interface LayerObjectIdentifierCache : NSObject
 
-- (id)initWithManagedObjectContext:(NSManagedObjectContext *)managedObjectContext;
-- (NSManagedObject *)managedObjectWithEntity:(NSEntityDescription *)entity layerIdentifier:(NSURL *)layerObjectIdentifier;
+- (NSManagedObject *)managedObjectWithEntity:(NSEntityDescription *)entity layerIdentifier:(NSURL *)layerObjectIdentifier inManagedObjectContext:(NSManagedObjectContext *)context;
 
 @end
 
 @interface LayerObjectChangeSynchronizer ()
 @property (nonatomic) LYRClient *layerClient;
 @property (nonatomic) NSOperationQueue *operationQueue;
-@property (nonatomic) NSManagedObjectContext *synchronizerContext;
 @property (nonatomic) LayerObjectIdentifierCache *objectCache;
 @end
 
@@ -32,20 +31,17 @@
                                  userInfo:nil];
 }
 
-- (id)initWithLayerClient:(LYRClient *)layerClient managedObjectContext:(NSManagedObjectContext *)managedObjectContext
-{
+- (id)initWithLayerClient:(LYRClient *)layerClient {
     NSParameterAssert(layerClient);
-    NSParameterAssert(managedObjectContext);
+    //NSParameterAssert(managedObjectContext);
     self = [super init];
     if (self) {
         _layerClient = layerClient;
         _operationQueue = [NSOperationQueue new];
         _operationQueue.maxConcurrentOperationCount = 1;
-        _synchronizerContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
-        _synchronizerContext.parentContext = managedObjectContext;
-        _objectCache = [[LayerObjectIdentifierCache alloc] initWithManagedObjectContext:_synchronizerContext];
-        _conversationEntity = [NSEntityDescription entityForName:@"Conversation" inManagedObjectContext:self.synchronizerContext];
-        _messageEntity = [NSEntityDescription entityForName:@"Message" inManagedObjectContext:self.synchronizerContext];
+        _objectCache = [[LayerObjectIdentifierCache alloc] init];
+        _conversationEntity = [NSEntityDescription entityForName:@"Conversation" inManagedObjectContext:[WKCoreDataStack backgroundContext]];
+        _messageEntity = [NSEntityDescription entityForName:@"Message" inManagedObjectContext:[WKCoreDataStack backgroundContext]];
         
         // Register for notifications
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(didReceiveLayerClientObjectsDidChangeNotification:) name:LYRClientObjectsDidChangeNotification object:layerClient];        
@@ -56,18 +52,20 @@
 - (void)didReceiveLayerClientObjectsDidChangeNotification:(NSNotification *)notification
 {
     [self.operationQueue addOperationWithBlock:^{
-        [self.synchronizerContext performBlockAndWait:^{
+        [WKCoreDataStack saveWithBlockAndWait:^(NSManagedObjectContext *localContext) {
             NSArray *changes = [notification.userInfo objectForKey:LYRClientObjectChangesUserInfoKey];
-            for (NSDictionary *change in changes) {
-                NSLog(@"Synchronizing %@", change);
-                id changeObject = [change objectForKey:LYRObjectChangeObjectKey];
-                LYRObjectChangeType updateKey = (LYRObjectChangeType)[[change objectForKey:LYRObjectChangeTypeKey] integerValue];
+            for (LYRObjectChange *change in changes) {
+                LYRLog(@"Synchronizing %@", change);
+                id changeObject = change.object;
+                LYRObjectChangeType updateKey = change.type;
                 switch (updateKey) {
                     case LYRObjectChangeTypeCreate: {
                         if ([changeObject isKindOfClass:[LYRConversation class]]) {
-                            [self createConversation:changeObject];
+                            [self createConversation:changeObject inManagedObjectContext:localContext];
                         } else if ([changeObject isKindOfClass:[LYRMessage class]]) {
-                            [self createMessage:changeObject];
+                            [self createMessage:changeObject inManagedObjectContext:localContext];
+                        } else if ([changeObject isKindOfClass:[LYRMessagePart class]]){
+                            [self createMessagePart:changeObject inManagedObjectContext:localContext];
                         } else {
                             [NSException raise:NSInternalInconsistencyException format:@"Cannot synchronize object change: Unable to handle objects of type '%@' (change=%@)", [changeObject class], change];
                         }
@@ -75,9 +73,11 @@
                     }
                     case LYRObjectChangeTypeUpdate: {
                         if ([changeObject isKindOfClass:[LYRConversation class]]) {
-                            [self updateConversation:changeObject change:change];
+                            [self updateConversation:changeObject change:change inManagedObjectContext:localContext];
                         } else if ([changeObject isKindOfClass:[LYRMessage class]]) {
-                            [self updateMessage:changeObject change:change];
+                            [self updateMessage:changeObject change:change inManagedObjectContext:localContext];
+                        } else if ([changeObject isKindOfClass:[LYRMessagePart class]]){
+                            [self updateMessagePart:changeObject change:change inManagedObjectContext:localContext];
                         } else {
                             [NSException raise:NSInternalInconsistencyException format:@"Cannot synchronize object change: Unable to handle objects of type '%@' (change=%@)", [changeObject class], change];
                         }
@@ -85,9 +85,9 @@
                     }
                     case LYRObjectChangeTypeDelete: {
                         if ([changeObject isKindOfClass:[LYRConversation class]]) {
-                            [self deleteConversation:changeObject];
+                            [self deleteConversation:changeObject inManagedObjectContext:localContext];
                         } else if ([changeObject isKindOfClass:[LYRMessage class]]) {
-                            [self deleteMessage:changeObject];
+                            [self deleteMessage:changeObject inManagedObjectContext:localContext];
                         } else {
                             [NSException raise:NSInternalInconsistencyException format:@"Cannot synchronize object change: Unable to handle objects of type '%@' (change=%@)", [changeObject class], change];
                         }
@@ -96,19 +96,6 @@
                     default:
                         break;
                 }
-            }
-            
-            NSError *error = nil;
-            BOOL success = [self.synchronizerContext save:&error];
-            if (success) {
-                success = [self.synchronizerContext.parentContext save:&error];
-                if (success) {
-                    
-                } else {
-                    
-                }
-                
-                // TODO: Delegate...
             }
         }];
     }];
@@ -130,33 +117,34 @@
 }
 
 #pragma mark - Private methods
+#pragma mark - Converation
 
-- (void)createConversation:(LYRConversation *)conversation
+- (void)createConversation:(LYRConversation *)conversation inManagedObjectContext:(NSManagedObjectContext *)context
 {
-    NSManagedObject *managedConversation = [[NSManagedObject alloc] initWithEntity:self.conversationEntity insertIntoManagedObjectContext:self.synchronizerContext];
-    [self updateManagedConversation:managedConversation fromLayerConversation:conversation change:nil];
+    NSManagedObject *managedConversation = [[NSManagedObject alloc] initWithEntity:self.conversationEntity insertIntoManagedObjectContext:context];
+    [self updateManagedConversation:managedConversation fromLayerConversation:conversation change:nil inManagedObjectContext:context];
     
     if ([self.delegate respondsToSelector:@selector(layerObjectChangeSynchronizer:didCreateManagedObject:forLayerObject:)]) {
         [self.delegate layerObjectChangeSynchronizer:self didCreateManagedObject:managedConversation forLayerObject:conversation];
     }
 }
 
-- (void)updateConversation:(LYRConversation *)conversation change:(NSDictionary *)change
+- (void)updateConversation:(LYRConversation *)conversation change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context
 {
-    NSManagedObject *managedConversation = [self.objectCache managedObjectWithEntity:self.conversationEntity layerIdentifier:conversation.identifier];
+    NSManagedObject *managedConversation = [self.objectCache managedObjectWithEntity:self.conversationEntity layerIdentifier:conversation.identifier inManagedObjectContext:context];
     NSAssert(managedConversation, @"Conversation should not be nil.");
-    [self updateManagedConversation:managedConversation fromLayerConversation:conversation change:change];
+    [self updateManagedConversation:managedConversation fromLayerConversation:conversation change:change inManagedObjectContext:context];
     
     if ([self.delegate respondsToSelector:@selector(layerObjectChangeSynchronizer:didUpdateManagedObject:withChange:forLayerObject:)]) {
-        [self.delegate layerObjectChangeSynchronizer:self didUpdateManagedObject:managedConversation withChange:change forLayerObject:conversation];
+        [self.delegate layerObjectChangeSynchronizer:self didUpdateManagedObject:managedConversation withChange:nil forLayerObject:conversation];
     }
 }
 
-- (void)deleteConversation:(LYRConversation *)conversation
+- (void)deleteConversation:(LYRConversation *)conversation inManagedObjectContext:(NSManagedObjectContext *)context
 {
-    NSManagedObject *managedConversation = [self.objectCache managedObjectWithEntity:self.conversationEntity layerIdentifier:conversation.identifier];
+    NSManagedObject *managedConversation = [self.objectCache managedObjectWithEntity:self.conversationEntity layerIdentifier:conversation.identifier inManagedObjectContext:context];
     if (managedConversation) {
-        [self.synchronizerContext deleteObject:managedConversation];
+        [context deleteObject:managedConversation];
         
         if ([self.delegate respondsToSelector:@selector(layerObjectChangeSynchronizer:didDeleteManagedObject:forLayerObject:)]) {
             [self.delegate layerObjectChangeSynchronizer:self didDeleteManagedObject:managedConversation forLayerObject:conversation];
@@ -164,12 +152,14 @@
     }
 }
 
-- (void)createMessage:(LYRMessage *)message
+#pragma mark - Message
+
+- (void)createMessage:(LYRMessage *)message inManagedObjectContext:(NSManagedObjectContext *)context
 {
-    NSManagedObject *managedMessage = [[NSManagedObject alloc] initWithEntity:self.messageEntity insertIntoManagedObjectContext:self.synchronizerContext];
+    NSManagedObject *managedMessage = [[NSManagedObject alloc] initWithEntity:self.messageEntity insertIntoManagedObjectContext:context];
     [self updateManagedMessage:managedMessage fromLayerMessage:message change:nil];
     
-    NSManagedObject *managedConversation = [self.objectCache managedObjectWithEntity:self.conversationEntity layerIdentifier:message.conversation.identifier];
+    NSManagedObject *managedConversation = [self.objectCache managedObjectWithEntity:self.conversationEntity layerIdentifier:message.conversation.identifier inManagedObjectContext:context];
     NSAssert(managedConversation, @"Conversation should not be nil.");
     [managedMessage setValue:managedConversation forKey:@"conversation"];
     
@@ -178,22 +168,22 @@
     }
 }
 
-- (void)updateMessage:(LYRMessage *)message change:(NSDictionary *)change
+- (void)updateMessage:(LYRMessage *)message change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context
 {
-    NSManagedObject *managedMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:message.identifier];
+    NSManagedObject *managedMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:message.identifier inManagedObjectContext:context];
     NSAssert(managedMessage, @"Message should not be nil.");
     [self updateManagedMessage:managedMessage fromLayerMessage:message change:change];
     
     if ([self.delegate respondsToSelector:@selector(layerObjectChangeSynchronizer:didUpdateManagedObject:withChange:forLayerObject:)]) {
-        [self.delegate layerObjectChangeSynchronizer:self didUpdateManagedObject:managedMessage withChange:change forLayerObject:message];
+        [self.delegate layerObjectChangeSynchronizer:self didUpdateManagedObject:managedMessage withChange:nil forLayerObject:message];
     }
 }
 
-- (void)deleteMessage:(LYRMessage *)message
+- (void)deleteMessage:(LYRMessage *)message inManagedObjectContext:(NSManagedObjectContext *)context
 {
-    NSManagedObject *managedMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:message.identifier];
+    NSManagedObject *managedMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:message.identifier inManagedObjectContext:context];
     if (managedMessage) {
-        [self.synchronizerContext deleteObject:managedMessage];
+        [context deleteObject:managedMessage];
         
         if ([self.delegate respondsToSelector:@selector(layerObjectChangeSynchronizer:didDeleteManagedObject:forLayerObject:)]) {
             [self.delegate layerObjectChangeSynchronizer:self didDeleteManagedObject:managedMessage forLayerObject:message];
@@ -201,19 +191,35 @@
     }
 }
 
-- (void)updateManagedConversation:(NSManagedObject *)managedConversation fromLayerConversation:(LYRConversation *)conversation change:(NSDictionary *)change
+#pragma mark - Message Part
+
+- (void)createMessagePart:(LYRMessagePart *)message inManagedObjectContext:(NSManagedObjectContext *)context {
+    
+}
+
+- (void)updateMessagePart:(LYRMessagePart *)messagePart change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context {
+    
+}
+
+- (void)deleteMessagePart:(LYRMessagePart *)messagePart inManagedObjectContext:(NSManagedObjectContext *)context {
+    
+}
+
+#pragma mark - Update
+
+- (void)updateManagedConversation:(NSManagedObject *)managedConversation fromLayerConversation:(LYRConversation *)conversation change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context
 {
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"identifier"]) {
+    if (change == nil || [change.property isEqualToString:@"identifier"]) {
         [managedConversation setValue:[conversation.identifier absoluteString] forKey:@"identifier"];
     }
     
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"createdAt"]) {
+    if (change == nil || [change.property isEqualToString:@"createdAt"]) {
         [managedConversation setValue:conversation.createdAt forKey:@"createdAt"];
     }
     
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"lastMessage"]) {
+    if (change == nil || [change.property isEqualToString:@"lastMessage"]) {
         if (conversation.lastMessage) {
-            NSManagedObject *lastMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:conversation.lastMessage.identifier];
+            NSManagedObject *lastMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:conversation.lastMessage.identifier inManagedObjectContext:context];
             [self updateManagedMessage:lastMessage fromLayerMessage:conversation.lastMessage change:nil];
             [lastMessage setValue:managedConversation forKey:@"conversation"];
             [managedConversation setValue:lastMessage forKey:@"lastMessage"];
@@ -222,30 +228,45 @@
     
 }
 
-- (void)updateManagedMessage:(NSManagedObject *)managedMessage fromLayerMessage:(LYRMessage *)message change:(NSDictionary *)change
+- (void)updateManagedMessage:(NSManagedObject *)managedMessage fromLayerMessage:(LYRMessage *)message change:(LYRObjectChange *)change
 {
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"identifier"]) {
+    if (change == nil || [change.property isEqualToString:@"identifier"]) {
         [managedMessage setValue:[message.identifier absoluteString] forKey:@"identifier"];
     }
     
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"index"]) {
-        [managedMessage setValue:@(message.index) forKey:@"index"];
+    if (change == nil || [change.property isEqualToString:@"index"]) {
+        [managedMessage setValue:@(message.position) forKey:@"index"];
     }
     
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"isSent"]) {
+    if (change == nil || [change.property isEqualToString:@"isSent"]) {
         [managedMessage setValue:@(message.isSent) forKey:@"isSent"];
     }
     
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"receivedAt"]) {
+    if (change == nil || [change.property isEqualToString:@"receivedAt"]) {
         [managedMessage setValue:message.receivedAt forKey:@"receivedAt"];
     }
     
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"sentAt"]) {
+    if (change == nil || [change.property isEqualToString:@"sentAt"]) {
         [managedMessage setValue:message.sentAt forKey:@"sentAt"];
     }
     
-    if (change == nil || [change[LYRObjectChangePropertyKey] isEqualToString:@"sentByUserID"]) {
-        [managedMessage setValue:message.sentByUserID forKey:@"sentByUserID"];
+    if (change == nil || [change.property isEqualToString:@"sentByUserID"]) {
+        [managedMessage setValue:message.sender.userID forKey:@"sentByUserID"];
+    }
+}
+
+- (void)updateManagedMessagePart:(NSManagedObject *)managedMessage fromLayerMessage:(LYRMessagePart *)messagePart change:(LYRObjectChange *)change
+{
+    if (change == nil || [change.property isEqualToString:@"identifier"]) {
+        [managedMessage setValue:[messagePart.identifier absoluteString] forKey:@"identifier"];
+    }
+    
+    if (change == nil || [change.property isEqualToString:@"data"]) {
+        [managedMessage setValue:messagePart.data forKey:@"data"];
+    }
+    
+    if (change == nil || [change.property isEqualToString:@"MIMEType"]) {
+        [managedMessage setValue:messagePart.MIMEType forKey:@"mimeType"];
     }
 }
 
@@ -253,37 +274,25 @@
 
 
 @interface LayerObjectIdentifierCache ()
-@property (nonatomic) dispatch_queue_t dispatchQueue;
-@property (nonatomic) NSManagedObjectContext *managedObjectContext;
 @property (nonatomic) NSMutableDictionary *layerIdentifiersToManagedObjectIDs;
 @end
 
 @implementation LayerObjectIdentifierCache
 
-- (id)initWithManagedObjectContext:(NSManagedObjectContext *)managedObjectContext
+- (id)init
 {
     self = [super init];
     if (self) {
-        _dispatchQueue = dispatch_queue_create("com.layer.LYRCoreData.LayerObjectIdentifierCache", DISPATCH_QUEUE_SERIAL);
-        _managedObjectContext = managedObjectContext;
         _layerIdentifiersToManagedObjectIDs = [NSMutableDictionary new];
     }
     return self;
 }
 
-- (id)init
-{
-    @throw [NSException exceptionWithName:NSInvalidArgumentException
-                                   reason:[NSString stringWithFormat:@"Failed to call designated initializer: call `%@` instead.",
-                                           NSStringFromSelector(@selector(initWithManagedObjectContext:))]
-                                 userInfo:nil];
-}
-
-- (NSManagedObject *)managedObjectWithEntity:(NSEntityDescription *)entity layerIdentifier:(NSURL *)layerObjectIdentifier
+- (NSManagedObject *)managedObjectWithEntity:(NSEntityDescription *)entity layerIdentifier:(NSURL *)layerObjectIdentifier inManagedObjectContext:(NSManagedObjectContext *)context
 {
     NSManagedObjectID *managedObjectID = self.layerIdentifiersToManagedObjectIDs[layerObjectIdentifier];
     if (managedObjectID) {
-        return [self.managedObjectContext objectWithID:managedObjectID];
+        return [context objectWithID:managedObjectID];
     } else {
         static NSPredicate *predicateTemplate;
         if (!predicateTemplate) {
@@ -295,7 +304,7 @@
         fetchRequest.predicate = [predicateTemplate predicateWithSubstitutionVariables:@{ @"identifier": [layerObjectIdentifier absoluteString] }];
         
         NSError *error = nil;
-        NSArray *objects = [self.managedObjectContext executeFetchRequest:fetchRequest error:&error];
+        NSArray *objects = [context executeFetchRequest:fetchRequest error:&error];
         if (!objects) {
             @throw [NSException exceptionWithName:NSInternalInconsistencyException
                                            reason:[NSString stringWithFormat:@"Failed executing fetch request: %@", error]
@@ -305,7 +314,7 @@
         if ([objects count]) {
             return [objects firstObject];
         } else {
-            NSManagedObject *managedObject = [[NSManagedObject alloc] initWithEntity:entity insertIntoManagedObjectContext:self.managedObjectContext];
+            NSManagedObject *managedObject = [[NSManagedObject alloc] initWithEntity:entity insertIntoManagedObjectContext:context];
             self.layerIdentifiersToManagedObjectIDs[layerObjectIdentifier] = managedObject.objectID;
             return managedObject;
         }

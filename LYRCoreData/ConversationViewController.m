@@ -68,14 +68,15 @@
 - (void)configureCell:(UITableViewCell *)cell atIndexPath:(NSIndexPath *)indexPath {
     NSManagedObject *managedMessage = [self.fetchedResultsController objectAtIndexPath:indexPath];
     NSURL *identifier = [NSURL URLWithString:[managedMessage valueForKey:@"identifier"]];
-    LYRMessage *message = [[self.layerClient messagesForIdentifiers:[NSSet setWithObject:identifier]] anyObject];
-    LYRMessagePart *messagePart = message.parts[0];
-    if ([messagePart.MIMEType isEqualToString:@"text/plain"]) {
-        cell.textLabel.text = [[NSString alloc] initWithData:messagePart.data encoding:NSUTF8StringEncoding];
-    } else {
-        cell.textLabel.text = [NSString stringWithFormat:@"Cannot display '%@'", messagePart.MIMEType];
-    }
-    cell.detailTextLabel.text = message.sentByUserID;
+    //LYRMessage *message = [[self.layerClient messagesForIdentifiers:[NSSet setWithObject:identifier]] anyObject];
+    //LYRMessagePart *messagePart = message.parts[0];
+//    if ([messagePart.MIMEType isEqualToString:@"text/plain"]) {
+//        cell.textLabel.text = [[NSString alloc] initWithData:messagePart.data encoding:NSUTF8StringEncoding];
+//    } else {
+//        cell.textLabel.text = [NSString stringWithFormat:@"Cannot display '%@'", messagePart.MIMEType];
+//    }
+//    cell.detailTextLabel.text = message.sender.userID;
+    cell.detailTextLabel.text = identifier.absoluteString;
 }
 
 #pragma mark - Fetched results controller
@@ -87,7 +88,7 @@
     }
     
     NSFetchRequest *fetchRequest = [NSFetchRequest fetchRequestWithEntityName:@"Message"];
-    [fetchRequest setFetchBatchSize:20];
+    [fetchRequest setFetchBatchSize:50];
     NSSortDescriptor *sortDescriptor = [[NSSortDescriptor alloc] initWithKey:@"index" ascending:YES];
     fetchRequest.sortDescriptors = @[ sortDescriptor ];
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"conversation == %@", self.conversation];
@@ -95,13 +96,13 @@
     NSFetchedResultsController *fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
                                                                                                managedObjectContext:self.conversation.managedObjectContext
                                                                                                  sectionNameKeyPath:nil
-                                                                                                          cacheName:[self.conversation valueForKey:@"identifier"]];
+                                                                                                          cacheName:nil];
     fetchedResultsController.delegate = self;
     self.fetchedResultsController = fetchedResultsController;
     
     NSError *error = nil;
     if (![self.fetchedResultsController performFetch:&error]) {
-        NSLog(@"Unresolved error %@, %@", error, [error userInfo]);
+        LYRLog(@"Unresolved error %@, %@", error, [error userInfo]);
         abort();
     }
     

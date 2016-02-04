@@ -78,13 +78,13 @@
     NSSortDescriptor *sortDescriptor = [[NSSortDescriptor alloc] initWithKey:@"lastMessage.receivedAt" ascending:NO];
     fetchRequest.sortDescriptors = @[sortDescriptor];
     
-    NSFetchedResultsController *fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:self.managedObjectContext sectionNameKeyPath:nil cacheName:@"Converstions"];
+    NSFetchedResultsController *fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:self.managedObjectContext sectionNameKeyPath:nil cacheName:nil];
     fetchedResultsController.delegate = self;
     self.fetchedResultsController = fetchedResultsController;
     
-	NSError *error = nil;
+    NSError *error = nil;
 	if (![self.fetchedResultsController performFetch:&error]) {
-	    NSLog(@"Unresolved error %@, %@", error, [error userInfo]);
+	    LYRLog(@"Unresolved error %@, %@", error, [error userInfo]);
 	    abort();
 	}
     
