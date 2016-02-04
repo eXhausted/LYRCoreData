@@ -8,7 +8,6 @@
 
 #import <Foundation/Foundation.h>
 @import CoreData;
-//#import "NSManagedObject+WK.h"
 
 @interface WKCoreDataStack : NSObject
 
