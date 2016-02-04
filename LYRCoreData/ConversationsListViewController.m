@@ -51,13 +51,13 @@
     NSManagedObject *conversation = [self.fetchedResultsController objectAtIndexPath:indexPath];
     NSManagedObject *lastMessage = [conversation valueForKey:@"lastMessage"];
     if (lastMessage) {
-        NSURL *identifier = [NSURL URLWithString:[lastMessage valueForKey:@"identifier"]];
-        LYRMessage *message = [[self.layerClient messagesForIdentifiers:[NSSet setWithObject:identifier]] anyObject];
-        LYRMessagePart *messagePart = message.parts[0];
-        if ([messagePart.MIMEType isEqualToString:@"text/plain"]) {
+        LYRMessage *message = (LYRMessage *)lastMessage;
+        LYRMessagePart *messagePart = [(NSSet *)message.parts anyObject];
+        NSString *MIMEType = [messagePart valueForKey:@"mimeType"];
+        if ([MIMEType isEqualToString:@"text/plain"]) {
             cell.textLabel.text = [[NSString alloc] initWithData:messagePart.data encoding:NSUTF8StringEncoding];
         } else {
-            cell.textLabel.text = [NSString stringWithFormat:@"Cannot display '%@'", messagePart.MIMEType];
+            cell.textLabel.text = [NSString stringWithFormat:@"Cannot display '%@'", MIMEType];
         }
     } else {
         cell.textLabel.text = [[conversation valueForKey:@"identifier"] description];

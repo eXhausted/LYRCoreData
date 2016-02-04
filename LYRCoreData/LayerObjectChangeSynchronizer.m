@@ -23,8 +23,7 @@
 
 @implementation LayerObjectChangeSynchronizer
 
-- (id)init
-{
+- (id)init {
     @throw [NSException exceptionWithName:NSInvalidArgumentException
                                    reason:[NSString stringWithFormat:@"Failed to call designated initializer: call `%@` instead.",
                                            NSStringFromSelector(@selector(initWithLayerClient:))]
@@ -50,8 +49,7 @@
     return self;
 }
 
-- (void)didReceiveLayerClientObjectsDidChangeNotification:(NSNotification *)notification
-{
+- (void)didReceiveLayerClientObjectsDidChangeNotification:(NSNotification *)notification {
     [self.operationQueue addOperationWithBlock:^{
         [WKCoreDataStack saveWithBlockAndWait:^(NSManagedObjectContext *localContext) {
             NSArray *changes = [notification.userInfo objectForKey:LYRClientObjectChangesUserInfoKey];
@@ -104,26 +102,22 @@
     }];
 }
 
-- (void)suspend
-{
+- (void)suspend {
     self.operationQueue.suspended = YES;
 }
 
-- (void)resume
-{
+- (void)resume {
     self.operationQueue.suspended = NO;
 }
 
-- (BOOL)isSuspended
-{
+- (BOOL)isSuspended {
     return self.operationQueue.isSuspended;
 }
 
 #pragma mark - Private methods
 #pragma mark - Converation
 
-- (void)createConversation:(LYRConversation *)conversation inManagedObjectContext:(NSManagedObjectContext *)context
-{
+- (void)createConversation:(LYRConversation *)conversation inManagedObjectContext:(NSManagedObjectContext *)context {
     NSManagedObject *managedConversation = [[NSManagedObject alloc] initWithEntity:self.conversationEntity insertIntoManagedObjectContext:context];
     [self updateManagedConversation:managedConversation fromLayerConversation:conversation change:nil inManagedObjectContext:context];
     
@@ -132,8 +126,7 @@
     }
 }
 
-- (void)updateConversation:(LYRConversation *)conversation change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context
-{
+- (void)updateConversation:(LYRConversation *)conversation change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context {
     NSManagedObject *managedConversation = [self.objectCache managedObjectWithEntity:self.conversationEntity layerIdentifier:conversation.identifier inManagedObjectContext:context];
     NSAssert(managedConversation, @"Conversation should not be nil.");
     [self updateManagedConversation:managedConversation fromLayerConversation:conversation change:change inManagedObjectContext:context];
@@ -143,8 +136,7 @@
     }
 }
 
-- (void)deleteConversation:(LYRConversation *)conversation inManagedObjectContext:(NSManagedObjectContext *)context
-{
+- (void)deleteConversation:(LYRConversation *)conversation inManagedObjectContext:(NSManagedObjectContext *)context {
     NSManagedObject *managedConversation = [self.objectCache managedObjectWithEntity:self.conversationEntity layerIdentifier:conversation.identifier inManagedObjectContext:context];
     if (managedConversation) {
         [context deleteObject:managedConversation];
@@ -157,8 +149,7 @@
 
 #pragma mark - Message
 
-- (void)createMessage:(LYRMessage *)message inManagedObjectContext:(NSManagedObjectContext *)context
-{
+- (void)createMessage:(LYRMessage *)message inManagedObjectContext:(NSManagedObjectContext *)context {
     NSManagedObject *managedMessage = [[NSManagedObject alloc] initWithEntity:self.messageEntity insertIntoManagedObjectContext:context];
     [self updateManagedMessage:managedMessage fromLayerMessage:message change:nil];
     
@@ -171,8 +162,7 @@
     }
 }
 
-- (void)updateMessage:(LYRMessage *)message change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context
-{
+- (void)updateMessage:(LYRMessage *)message change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context {
     NSManagedObject *managedMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:message.identifier inManagedObjectContext:context];
     NSAssert(managedMessage, @"Message should not be nil.");
     [self updateManagedMessage:managedMessage fromLayerMessage:message change:change];
@@ -182,8 +172,7 @@
     }
 }
 
-- (void)deleteMessage:(LYRMessage *)message inManagedObjectContext:(NSManagedObjectContext *)context
-{
+- (void)deleteMessage:(LYRMessage *)message inManagedObjectContext:(NSManagedObjectContext *)context {
     NSManagedObject *managedMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:message.identifier inManagedObjectContext:context];
     if (managedMessage) {
         [context deleteObject:managedMessage];
@@ -232,8 +221,7 @@
 
 #pragma mark - Update
 
-- (void)updateManagedConversation:(NSManagedObject *)managedConversation fromLayerConversation:(LYRConversation *)conversation change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context
-{
+- (void)updateManagedConversation:(NSManagedObject *)managedConversation fromLayerConversation:(LYRConversation *)conversation change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context {
     if (change == nil || [change.property isEqualToString:@"identifier"]) {
         [managedConversation setValue:[conversation.identifier absoluteString] forKey:@"identifier"];
     }
@@ -253,8 +241,7 @@
     
 }
 
-- (void)updateManagedMessage:(NSManagedObject *)managedMessage fromLayerMessage:(LYRMessage *)message change:(LYRObjectChange *)change
-{
+- (void)updateManagedMessage:(NSManagedObject *)managedMessage fromLayerMessage:(LYRMessage *)message change:(LYRObjectChange *)change {
     if (change == nil || [change.property isEqualToString:@"identifier"]) {
         [managedMessage setValue:[message.identifier absoluteString] forKey:@"identifier"];
     }
@@ -280,8 +267,7 @@
     }
 }
 
-- (void)updateManagedMessagePart:(NSManagedObject *)managedMessage fromLayerMessage:(LYRMessagePart *)messagePart change:(LYRObjectChange *)change
-{
+- (void)updateManagedMessagePart:(NSManagedObject *)managedMessage fromLayerMessage:(LYRMessagePart *)messagePart change:(LYRObjectChange *)change {
     if (change == nil || [change.property isEqualToString:@"identifier"]) {
         [managedMessage setValue:[messagePart.identifier absoluteString] forKey:@"identifier"];
     }
@@ -304,8 +290,7 @@
 
 @implementation LayerObjectIdentifierCache
 
-- (id)init
-{
+- (id)init {
     self = [super init];
     if (self) {
         _layerIdentifiersToManagedObjectIDs = [NSMutableDictionary new];
@@ -313,8 +298,7 @@
     return self;
 }
 
-- (NSManagedObject *)managedObjectWithEntity:(NSEntityDescription *)entity layerIdentifier:(NSURL *)layerObjectIdentifier inManagedObjectContext:(NSManagedObjectContext *)context
-{
+- (NSManagedObject *)managedObjectWithEntity:(NSEntityDescription *)entity layerIdentifier:(NSURL *)layerObjectIdentifier inManagedObjectContext:(NSManagedObjectContext *)context {
     NSManagedObjectID *managedObjectID = self.layerIdentifiersToManagedObjectIDs[layerObjectIdentifier];
     if (managedObjectID) {
         return [context objectWithID:managedObjectID];

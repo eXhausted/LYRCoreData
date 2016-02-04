@@ -68,10 +68,11 @@
 - (void)configureCell:(UITableViewCell *)cell atIndexPath:(NSIndexPath *)indexPath {
     NSManagedObject *managedMessage = [self.fetchedResultsController objectAtIndexPath:indexPath];
     LYRMessagePart *messagePart = [[managedMessage valueForKey:@"parts"] anyObject];
-    if ([[messagePart valueForKey:@"mimeType"] isEqualToString:@"text/plain"]) {
+    NSString *MIMEType = [messagePart valueForKey:@"mimeType"];
+    if ([MIMEType isEqualToString:@"text/plain"]) {
         cell.textLabel.text = [[NSString alloc] initWithData:messagePart.data encoding:NSUTF8StringEncoding];
     } else {
-        cell.textLabel.text = [NSString stringWithFormat:@"Cannot display '%@'", [messagePart valueForKey:@"mimeType"]];
+        cell.textLabel.text = [NSString stringWithFormat:@"Cannot display '%@'", MIMEType];
     }
     cell.detailTextLabel.text = [managedMessage valueForKey:@"senderID"];
 }
