@@ -67,16 +67,13 @@
 
 - (void)configureCell:(UITableViewCell *)cell atIndexPath:(NSIndexPath *)indexPath {
     NSManagedObject *managedMessage = [self.fetchedResultsController objectAtIndexPath:indexPath];
-    NSURL *identifier = [NSURL URLWithString:[managedMessage valueForKey:@"identifier"]];
-    //LYRMessage *message = [[self.layerClient messagesForIdentifiers:[NSSet setWithObject:identifier]] anyObject];
-    //LYRMessagePart *messagePart = message.parts[0];
-//    if ([messagePart.MIMEType isEqualToString:@"text/plain"]) {
-//        cell.textLabel.text = [[NSString alloc] initWithData:messagePart.data encoding:NSUTF8StringEncoding];
-//    } else {
-//        cell.textLabel.text = [NSString stringWithFormat:@"Cannot display '%@'", messagePart.MIMEType];
-//    }
-//    cell.detailTextLabel.text = message.sender.userID;
-    cell.detailTextLabel.text = identifier.absoluteString;
+    LYRMessagePart *messagePart = [[managedMessage valueForKey:@"parts"] anyObject];
+    if ([[messagePart valueForKey:@"mimeType"] isEqualToString:@"text/plain"]) {
+        cell.textLabel.text = [[NSString alloc] initWithData:messagePart.data encoding:NSUTF8StringEncoding];
+    } else {
+        cell.textLabel.text = [NSString stringWithFormat:@"Cannot display '%@'", [messagePart valueForKey:@"mimeType"]];
+    }
+    cell.detailTextLabel.text = [managedMessage valueForKey:@"senderID"];
 }
 
 #pragma mark - Fetched results controller

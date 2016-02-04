@@ -27,7 +27,7 @@
 {
     @throw [NSException exceptionWithName:NSInvalidArgumentException
                                    reason:[NSString stringWithFormat:@"Failed to call designated initializer: call `%@` instead.",
-                                           NSStringFromSelector(@selector(initWithLayerClient:managedObjectContext:))]
+                                           NSStringFromSelector(@selector(initWithLayerClient:))]
                                  userInfo:nil];
 }
 
@@ -42,6 +42,7 @@
         _objectCache = [[LayerObjectIdentifierCache alloc] init];
         _conversationEntity = [NSEntityDescription entityForName:@"Conversation" inManagedObjectContext:[WKCoreDataStack backgroundContext]];
         _messageEntity = [NSEntityDescription entityForName:@"Message" inManagedObjectContext:[WKCoreDataStack backgroundContext]];
+        _messagePartEntity = [NSEntityDescription entityForName:@"MessagePart" inManagedObjectContext:[WKCoreDataStack backgroundContext]];
         
         // Register for notifications
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(didReceiveLayerClientObjectsDidChangeNotification:) name:LYRClientObjectsDidChangeNotification object:layerClient];        
@@ -88,6 +89,8 @@
                             [self deleteConversation:changeObject inManagedObjectContext:localContext];
                         } else if ([changeObject isKindOfClass:[LYRMessage class]]) {
                             [self deleteMessage:changeObject inManagedObjectContext:localContext];
+                        } else if ([changeObject isKindOfClass:[LYRMessagePart class]]){
+                            [self deleteMessagePart:changeObject inManagedObjectContext:localContext];
                         } else {
                             [NSException raise:NSInternalInconsistencyException format:@"Cannot synchronize object change: Unable to handle objects of type '%@' (change=%@)", [changeObject class], change];
                         }
@@ -193,16 +196,38 @@
 
 #pragma mark - Message Part
 
-- (void)createMessagePart:(LYRMessagePart *)message inManagedObjectContext:(NSManagedObjectContext *)context {
+- (void)createMessagePart:(LYRMessagePart *)messagePart inManagedObjectContext:(NSManagedObjectContext *)context {
+    NSManagedObject *managedMessagePart = [[NSManagedObject alloc] initWithEntity:self.messagePartEntity insertIntoManagedObjectContext:context];
+    [self updateManagedMessagePart:managedMessagePart fromLayerMessage:messagePart change:nil];
     
+    NSManagedObject *managedMessage = [self.objectCache managedObjectWithEntity:self.messageEntity layerIdentifier:messagePart.message.identifier inManagedObjectContext:context];
+    NSAssert(managedMessage, @"Message should not be nil.");
+    [managedMessagePart setValue:managedMessage forKey:@"message"];
+    
+    if ([self.delegate respondsToSelector:@selector(layerObjectChangeSynchronizer:didCreateManagedObject:forLayerObject:)]) {
+        [self.delegate layerObjectChangeSynchronizer:self didCreateManagedObject:managedMessagePart forLayerObject:messagePart];
+    }
 }
 
 - (void)updateMessagePart:(LYRMessagePart *)messagePart change:(LYRObjectChange *)change inManagedObjectContext:(NSManagedObjectContext *)context {
+    NSManagedObject *managedMessagePart = [self.objectCache managedObjectWithEntity:self.messagePartEntity layerIdentifier:messagePart.identifier inManagedObjectContext:context];
+    NSAssert(managedMessagePart, @"MessagePart should not be nil.");
+    [self updateManagedMessagePart:managedMessagePart fromLayerMessage:messagePart change:change];
     
+    if ([self.delegate respondsToSelector:@selector(layerObjectChangeSynchronizer:didUpdateManagedObject:withChange:forLayerObject:)]) {
+        [self.delegate layerObjectChangeSynchronizer:self didUpdateManagedObject:managedMessagePart withChange:nil forLayerObject:messagePart];
+    }
 }
 
 - (void)deleteMessagePart:(LYRMessagePart *)messagePart inManagedObjectContext:(NSManagedObjectContext *)context {
-    
+    NSManagedObject *managedMessagePart = [self.objectCache managedObjectWithEntity:self.messagePartEntity layerIdentifier:messagePart.identifier inManagedObjectContext:context];
+    if (managedMessagePart) {
+        [context deleteObject:managedMessagePart];
+        
+        if ([self.delegate respondsToSelector:@selector(layerObjectChangeSynchronizer:didDeleteManagedObject:forLayerObject:)]) {
+            [self.delegate layerObjectChangeSynchronizer:self didDeleteManagedObject:managedMessagePart forLayerObject:messagePart];
+        }
+    }
 }
 
 #pragma mark - Update
@@ -251,7 +276,7 @@
     }
     
     if (change == nil || [change.property isEqualToString:@"sentByUserID"]) {
-        [managedMessage setValue:message.sender.userID forKey:@"sentByUserID"];
+        [managedMessage setValue:message.sender.userID forKey:@"senderID"];
     }
 }
 

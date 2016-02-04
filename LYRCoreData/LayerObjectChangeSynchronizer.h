@@ -40,9 +40,14 @@
 
 /**
  @abstract The Core Data entity used to model the local Message representation.
- @discussion Must have the attributes `identifier`, `index`, `isSent`, `receivedAt`, `sentAt`, and `sentByUserID` as well as the relationships `conversation` (one-to-one) and `lastMessageConversation` (one-to-one).
+ @discussion Must have the attributes `identifier`, `index`, `isSent`, `receivedAt`, `sentAt`, and `senderID` as well as the relationships `conversation` (one-to-one) and `lastMessageConversation` (one-to-one).
  */
 @property (nonatomic) NSEntityDescription *messageEntity;
+
+/**
+ @abstract The Core Data entity used to model the local MessagePart representation.
+ */
+@property (nonatomic) NSEntityDescription *messagePartEntity;
 
 ///-----------------------------
 /// @name Accessing the Delegate
