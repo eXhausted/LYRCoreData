@@ -14,7 +14,7 @@
 
 #endif /* LYRCoreData_pch */
 
-#ifdef true
+#ifdef DEBUG
 #define LYRLog(fmt, ...) NSLog((@"%s [Line %d] " fmt), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__);
 #else
 #define LYRLog(...)
